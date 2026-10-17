@@ -1,0 +1,14 @@
+{
+  "name": "remake-ai-mcp",
+  "version": "1.0.0",
+  "description": "RE:MAKE AI - MCP server for repairing, reworking and reusing appliances and clothing",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node -e \"console.log('No build step needed')\"",
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
