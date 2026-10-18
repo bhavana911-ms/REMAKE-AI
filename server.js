@@ -219,6 +219,7 @@ if (process.argv.includes("--stdio")) {
   const indexPath = path.join(__dirname, "public", "index.html");
   const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS", "Access-Control-Expose-Headers": "Mcp-Session-Id" };
   const publicDir = path.join(__dirname, "public");
+  const sseSessions = new Map();
   http.createServer((req, res) => {
     const url = (req.url || "/").split("?")[0];
     if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
@@ -239,6 +240,33 @@ if (process.argv.includes("--stdio")) {
           res.writeHead(400, { ...cors, "Content-Type": "application/json" });
           res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }));
         }
+      });
+      return;
+    }
+    // ---- Legacy HTTP+SSE transport (used by NitroStudio / older MCP clients) ----
+    const fullUrl = new URL(req.url || "/", "http://localhost");
+    if (req.method === "GET" && url === "/sse") {
+      const sid = require("crypto").randomUUID();
+      res.writeHead(200, { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+      sseSessions.set(sid, res);
+      res.write(`event: endpoint\ndata: /messages?sessionId=${sid}\n\n`);
+      const beat = setInterval(() => res.write(": ping\n\n"), 25000);
+      req.on("close", () => { clearInterval(beat); sseSessions.delete(sid); });
+      return;
+    }
+    if (req.method === "POST" && (url === "/messages" || url === "/sse")) {
+      const stream = sseSessions.get(fullUrl.searchParams.get("sessionId"));
+      if (!stream) { res.writeHead(404, cors); return res.end("Unknown session"); }
+      let body = ""; req.on("data", (c) => (body += c));
+      req.on("end", async () => {
+        try {
+          const parsed = JSON.parse(body);
+          for (const m of Array.isArray(parsed) ? parsed : [parsed]) {
+            const r = await handleRpc(m);
+            if (r) stream.write(`event: message\ndata: ${JSON.stringify(r)}\n\n`);
+          }
+          res.writeHead(202, cors); res.end("Accepted");
+        } catch { res.writeHead(400, cors); res.end("Bad request"); }
       });
       return;
     }

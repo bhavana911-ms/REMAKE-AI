@@ -12,5 +12,12 @@ setTimeout(async () => {
   const html = await fetch("http://127.0.0.1:3456/").then((r) => r.text()); check("serves site", html.includes("RE:MAKE AI"));
   for (const f of ["app.js","styles.css","tailwind-config.js"]) { const r = await fetch("http://127.0.0.1:3456/" + f); check("serves " + f, r.status === 200 && (await r.text()).length > 20); }
   check("blocks path traversal", (await fetch("http://127.0.0.1:3456/..%2fserver.js")).status === 404);
+  // legacy SSE transport round-trip
+  const sse = await fetch("http://127.0.0.1:3456/sse"); const rd = sse.body.getReader(); const dec = new TextDecoder();
+  const readEvent = async () => { let b = ""; while (!b.includes("\n\n")) { const { value } = await rd.read(); b += dec.decode(value); } return b; };
+  const ep = await readEvent(); check("sse endpoint event", ep.includes("event: endpoint") && ep.includes("/messages?sessionId="));
+  const postUrl = "http://127.0.0.1:3456" + ep.split("data: ")[1].trim();
+  await fetch(postUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/list" }) });
+  const msg = await readEvent(); check("sse tools/list reply", msg.includes("event: message") && msg.includes("generate_upcycling_ideas"));
   srv.kill(); process.exit(fail ? 1 : 0);
 }, 700);
